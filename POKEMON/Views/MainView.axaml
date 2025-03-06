@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:POKEMON.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="POKEMON.Views.MainView"
+             x:DataType="vm:MainViewModel"
+             xmlns:conv="clr-namespace:POKEMON.Converters">
+
+	<UserControl.Resources>
+		<conv:UrlToImageConverter x:Key="UrlToImageConverter"/>
+	</UserControl.Resources>
+
+	<Design.DataContext>
+		<vm:MainViewModel />
+	</Design.DataContext>
+
+	<Grid Background="Red">
+		<Border Background="Black" Padding="10" BorderBrush="Black" BorderThickness="3">
+			<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+
+				<TextBlock Text="Pokedex" FontSize="24" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+
+				<Border Background="Gray" CornerRadius="10" Padding="10" Width="500" Height="250">
+					<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                  Height="250" Width="500">
+						<ItemsControl ItemsSource="{Binding Pokemons}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<StackPanel Orientation="Horizontal" Spacing="10"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate>
+									<StackPanel Orientation="Vertical" Spacing="5" HorizontalAlignment="Center">
+										<Image Source="{Binding Sprites.FrontDefault, Converter={StaticResource UrlToImageConverter}}"
+                                               Width="100" Height="100"/>
+										<TextBlock Text="{Binding Name}" Foreground="White" FontSize="16" FontWeight="Bold"
+                                                   HorizontalAlignment="Center"/>
+
+										<TextBlock Text="{Binding Height, StringFormat=Height: {0}}" Foreground="White"
+                                                   FontSize="14" HorizontalAlignment="Center"/>
+										<TextBlock Text="{Binding Weight, StringFormat=Weight: {0}}" Foreground="White"
+                                                   FontSize="14" HorizontalAlignment="Center"/>
+
+									</StackPanel>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</ScrollViewer>
+				</Border>
+
+				<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+					<AutoCompleteBox Width="200" Text="{Binding PokemonQuery, Mode=TwoWay}" FilterMode="StartsWith"/>
+					<Button Content="Search" Command="{Binding FetchPokemonCommand}" Background="Black"
+                            Foreground="White" FontWeight="Bold" Padding="10"/>
+				</StackPanel>
+
+				<TextBlock Text="{Binding StatusMessage}" FontWeight="Bold" Foreground="White" Margin="5"/>
+			</StackPanel>
+		</Border>
+	</Grid>
+
+</UserControl>
