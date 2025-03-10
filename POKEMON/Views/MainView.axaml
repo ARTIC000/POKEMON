@@ -55,6 +55,8 @@
 					<AutoCompleteBox Width="200" Text="{Binding PokemonQuery, Mode=TwoWay}" FilterMode="StartsWith"/>
 					<Button Content="Search" Command="{Binding FetchPokemonCommand}" Background="Black"
                             Foreground="White" FontWeight="Bold" Padding="10"/>
+					<Button Content="Stop" Command="{Binding CancelSearchCommand}" Background="Black"
+                            Foreground="White" FontWeight="Bold" Padding="10"/>
 				</StackPanel>
 
 				<TextBlock Text="{Binding StatusMessage}" FontWeight="Bold" Foreground="White" Margin="5"/>

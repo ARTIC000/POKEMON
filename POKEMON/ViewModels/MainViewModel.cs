@@ -16,6 +16,7 @@ public class MainViewModel : ReactiveObject
     private readonly HttpClient _client;
     private const int MaxRetries = 3;
     private const int InitialDelayMilliseconds = 1000;
+    private CancellationTokenSource _cancellationTokenSource = new();
 
     public ObservableCollection<PokemonResponse> Pokemons { get; set; } = new();
 
@@ -24,6 +25,8 @@ public class MainViewModel : ReactiveObject
     private string _pokemonImage;
     private double _progress;
     private string _statusMessage;
+
+    private bool isSearching = false;
 
     public string PokemonQuery
     {
@@ -56,6 +59,7 @@ public class MainViewModel : ReactiveObject
     }
 
     public ReactiveCommand<Unit, Unit> FetchPokemonCommand { get; }
+    public ReactiveCommand<Unit, Unit> CancelSearchCommand { get; }
 
     public MainViewModel()
     {
@@ -63,6 +67,7 @@ public class MainViewModel : ReactiveObject
         StatusMessage = "...";
 
         FetchPokemonCommand = ReactiveCommand.CreateFromTask(FetchPokemonAsync);
+        CancelSearchCommand = ReactiveCommand.Create(StopSearch);
     }
 
     private async Task FetchPokemonAsync()
@@ -73,33 +78,55 @@ public class MainViewModel : ReactiveObject
             return;
         }
 
-        string query = PokemonQuery.Trim().ToLower();
+        _cancellationTokenSource.Cancel();
+        _cancellationTokenSource = new CancellationTokenSource();
+        var token = _cancellationTokenSource.Token;
+
+        isSearching = true;
         StatusMessage = "Searching...";
         Progress = 0;
 
         Pokemons.Clear();
+        string[] queries = PokemonQuery.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (IsNumeric(query))
+        try
         {
-            await SearchByIdOrName(query);
+            var tasks = queries.Select(async query =>
+            {
+                query = query.ToLower();
+                if (IsNumeric(query))
+                    await SearchByIdOrName(query, token);
+                else
+                    await SearchByNameOrType(query, token);
+            });
+
+            await Task.WhenAll(tasks);
         }
-        else
+        catch (OperationCanceledException)
         {
-            await SearchByNameOrType(query);
+            StatusMessage = "Search canceled.";
+        }
+        finally
+        {
+            isSearching = false;
+            StatusMessage = Pokemons.Any() ? "Pokémon found!" : "No Pokémon found.";
         }
     }
 
-    private async Task SearchByIdOrName(string query)
+
+    private async Task SearchByIdOrName(string query, CancellationToken token)
     {
         int retryCount = 0;
         int delay = InitialDelayMilliseconds;
 
         while (retryCount < MaxRetries)
         {
+            token.ThrowIfCancellationRequested();
+
             try
             {
                 string url = $"https://pokeapi.co/api/v2/pokemon/{query}";
-                var response = await _client.GetStringAsync(url);
+                var response = await _client.GetStringAsync(url, token);
                 var pokemon = JsonSerializer.Deserialize<PokemonResponse>(response, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
@@ -110,11 +137,9 @@ public class MainViewModel : ReactiveObject
                     UpdatePokemonData(pokemon);
                     return;
                 }
-                else
-                {
-                    StatusMessage = "Pokémon not found.";
-                    return;
-                }
+
+                StatusMessage = "Pokémon not found.";
+                return;
             }
             catch (Exception ex)
             {
@@ -129,23 +154,25 @@ public class MainViewModel : ReactiveObject
                 }
 
                 Console.WriteLine($"Retry {retryCount}/{MaxRetries} in {delay / 1000.0} seconds...");
-                await Task.Delay(delay);
+                await Task.Delay(delay, token);
                 delay *= 2;
             }
         }
     }
 
-    private async Task SearchByNameOrType(string query)
+    private async Task SearchByNameOrType(string query, CancellationToken token)
     {
         int retryCount = 0;
         int delay = InitialDelayMilliseconds;
 
         while (retryCount < MaxRetries)
         {
+            token.ThrowIfCancellationRequested();
+
             try
             {
                 string url = $"https://pokeapi.co/api/v2/pokemon/{query}";
-                var response = await _client.GetStringAsync(url);
+                var response = await _client.GetStringAsync(url, token);
                 var pokemon = JsonSerializer.Deserialize<PokemonResponse>(response, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
@@ -163,27 +190,28 @@ public class MainViewModel : ReactiveObject
             if (retryCount >= MaxRetries)
             {
                 StatusMessage = "Pokémon not found. Checking if it's a type...";
-                await SearchByType(query);
+                await SearchByType(query, token);
                 return;
             }
 
-            Console.WriteLine($"Retry {retryCount}/{MaxRetries} in {delay / 1000.0} seconds...");
-            await Task.Delay(delay);
+            await Task.Delay(delay, token);
             delay *= 2;
         }
     }
 
-    private async Task SearchByType(string type)
+    private async Task SearchByType(string type, CancellationToken token)
     {
         int retryCount = 0;
         int delay = InitialDelayMilliseconds;
 
         while (retryCount < MaxRetries)
         {
+            token.ThrowIfCancellationRequested();
+
             try
             {
                 string url = $"https://pokeapi.co/api/v2/type/{type}";
-                var response = await _client.GetStringAsync(url);
+                var response = await _client.GetStringAsync(url, token);
                 var jsonDoc = JsonDocument.Parse(response);
                 var pokemonEntries = jsonDoc.RootElement.GetProperty("pokemon");
 
@@ -191,17 +219,10 @@ public class MainViewModel : ReactiveObject
                 foreach (var entry in pokemonEntries.EnumerateArray().Take(5))
                 {
                     string pokemonName = entry.GetProperty("pokemon").GetProperty("name").GetString();
-                    await SearchByIdOrName(pokemonName);
+                    await SearchByIdOrName(pokemonName, token);
                 }
 
-                if (!Pokemons.Any())
-                {
-                    StatusMessage = "No Pokémon found for this type.";
-                }
-                else
-                {
-                    StatusMessage = "Pokémon found!";
-                }
+                StatusMessage = Pokemons.Any() ? "Pokémon found!" : "No Pokémon found for this type.";
                 return;
             }
             catch (Exception ex)
@@ -216,8 +237,7 @@ public class MainViewModel : ReactiveObject
                     return;
                 }
 
-                Console.WriteLine($"Retry {retryCount}/{MaxRetries} in {delay / 1000.0} seconds...");
-                await Task.Delay(delay);
+                await Task.Delay(delay, token);
                 delay *= 2;
             }
         }
@@ -234,6 +254,13 @@ public class MainViewModel : ReactiveObject
 
         Progress = 100;
         StatusMessage = "Pokémon found!";
+    }
+
+    private void StopSearch()
+    {
+        _cancellationTokenSource.Cancel();
+        isSearching = false;
+        StatusMessage = "Search stopped.";
     }
 
     private bool IsNumeric(string value) => int.TryParse(value, out _);
