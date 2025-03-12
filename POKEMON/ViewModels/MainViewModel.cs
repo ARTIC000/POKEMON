@@ -18,6 +18,9 @@ public class MainViewModel : ReactiveObject
     private const int InitialDelayMilliseconds = 1000;
     private CancellationTokenSource _cancellationTokenSource = new();
 
+    private const int MaxConcurrentRequests = 1; 
+    private readonly SemaphoreSlim _semaphore = new(MaxConcurrentRequests);
+
     public ObservableCollection<PokemonResponse> Pokemons { get; set; } = new();
 
     private string _pokemonQuery;
@@ -91,16 +94,26 @@ public class MainViewModel : ReactiveObject
 
         try
         {
-            var tasks = queries.Select(async query =>
+            foreach (var query in queries)
             {
-                query = query.ToLower();
-                if (IsNumeric(query))
-                    await SearchByIdOrName(query, token);
-                else
-                    await SearchByNameOrType(query, token);
-            });
+                await _semaphore.WaitAsync(token); 
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        string lowerQuery = query.ToLower();
+                        if (IsNumeric(lowerQuery))
+                            await SearchByIdOrName(lowerQuery, token);
+                        else
+                            await SearchByNameOrType(lowerQuery, token);
+                    }
+                    finally
+                    {
+                        _semaphore.Release(); 
+                    }
+                }, token);
+            }
 
-            await Task.WhenAll(tasks);
         }
         catch (OperationCanceledException)
         {
